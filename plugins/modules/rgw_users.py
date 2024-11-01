@@ -60,17 +60,12 @@ def get_user(rgw, uid, result):
             tenant = user["tenant"],
             display_name = user["display_name"],
             email = user["email"],
-            # default_placement = user["default_placement"],
-            # generate_key = user["generate_key"],
-            # key_type = user["key_type"],
             max_buckets = user["max_buckets"],
-            # placement_tags = user["placement_tags"],
             suspended = user["suspended"],
-            # user_caps = user["user_caps"]
         )
 
         for key in userout:
-            if userout[key] == "" or userout[key] == "None":
+            if userout[key] == "" or userout[key] == "None" or userout[key] == []:
                 userout[key] = None
 
         if len(user["keys"]) > 0:
@@ -166,12 +161,9 @@ def get_user_params(params, add_user_id=False):
         uid = uid,
         display_name = params["user_display_name"],
         email = params["user_email"],
-        # keys = user_keys,
-        # default_placement = params["user_default_placement"],
         max_buckets = params["user_max_buckets"],
-        # placement_tags = params["user_placement_tags"],
         suspended = params["user_suspended"],
-        # user_caps = params["user_user_caps"]
+        user_caps = params["user_caps"]
     )
 
     if add_user_id:
@@ -201,12 +193,10 @@ def main():
         user_display_name=dict(type='str', default=None),
         user_email=dict(type='str', default=None),
         user_access_key=dict(type='str', required=False),
-        # user_default_placement=dict(type='str', default=None),
         user_max_buckets = dict(type='int', default="1000"),
-        # user_placement_tags=dict(type='str', default=None),
         user_secret_key=dict(type='str', required=False),
         user_suspended = dict(type='int', default="0"),
-        # user_caps = dict(type='list', default=[]),
+        user_caps = dict(type='str', default=None),
     )
 
     module = AnsibleModule(
@@ -247,6 +237,9 @@ def main():
     # Create newuser_params
     newuser_params = get_user_params(module.params)
     newuser_params_user_id = get_user_params(module.params, add_user_id = True)
+    # Caps formatting differs between read and write and they don't update
+    newuser_params_wo_caps = newuser_params_user_id
+    newuser_params_wo_caps.pop("user_caps")
     uid = newuser_params_user_id.pop("uid")
     result["uid"] = uid
 
@@ -261,12 +254,12 @@ def main():
 
     # Check if changes are needed
     if module.params['state'] == "present":
-        if before_user != newuser_params_user_id:
+        if before_user != newuser_params_wo_caps:
             result['changed'] = True
             if module._diff:
                 result['diff'] = dict(
                     before=before_user,
-                    after=newuser_params_user_id
+                    after=newuser_params_wo_caps
                 )
     if module.params['state'] == "absent":
         if before_user is not None:
@@ -278,7 +271,7 @@ def main():
                 )
 
 
-    # EXIT also in check mode
+    # EXIT on error in check mode
     if len(result['error_messages']) > 0:
         module.fail_json(msg=result['error_messages'])
 
@@ -292,7 +285,7 @@ def main():
         elif before_user is not None and module.params['state'] == "absent":
             delete_user(rgw, uid, result)
         elif before_user != newuser_params_user_id:
-            if before_user["access_key"] != newuser_params_user_id["access_key"]:
+            if "access_key" in newuser_params_user_id and before_user["access_key"] != newuser_params_user_id["access_key"]:
                 remove_key(rgw, newuser_params, before_user["access_key"], result)
             update_user(rgw, newuser_params, result)
 
