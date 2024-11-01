@@ -88,7 +88,7 @@ def delete_user(rgw, uid, result):
 
     except rgwadmin.exceptions.RGWAdminException as e:
         result['msg']=str(e.code)
-        result['error_messages'].append(e.raw)
+        result['error_messages'].append(e.code)
 
     return userout
 
@@ -163,7 +163,7 @@ def get_user_params(params, add_user_id=False):
         email = params["user_email"],
         max_buckets = params["user_max_buckets"],
         suspended = params["user_suspended"],
-        user_caps = params["user_caps"]
+        user_caps = params["admin_caps"]
     )
 
     if add_user_id:
@@ -196,7 +196,7 @@ def main():
         user_max_buckets = dict(type='int', default="1000"),
         user_secret_key=dict(type='str', required=False),
         user_suspended = dict(type='int', default="0"),
-        user_caps = dict(type='str', default=None),
+        admin_caps = dict(type='str', default=None),
     )
 
     module = AnsibleModule(
