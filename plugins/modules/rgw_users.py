@@ -9,7 +9,8 @@ from ansible.module_utils.common.dict_transformations \
     import recursive_diff, dict_merge
 from socket import error as socket_error
 # import boto # s3
-import radosgw
+import rgwadmin
+import rgwadmin.exceptions
 
 ANSIBLE_METADATA = {
     'metadata_version': '1.0',
@@ -30,7 +31,7 @@ option:
             - Address of the rados gateway
         required: true
 
-requirements: ['radosgw', 'boto']
+requirements: ['rgwadmin', 'boto']
 
 author:
     - 'Cees Moerkerken'
@@ -44,93 +45,144 @@ EXAMPLES = r'''
 RETURN = r'''
 '''
 
-def get_user(rgw, uid):
+def get_user(rgw, uid, result):
     try:
         user = rgw.get_user(uid=uid)
-
-        userout = dict(
-            # caps = user.caps,
-            display_name = user.display_name,
-            email = user.email,
-            keys = str(user.keys),
-            max_buckets = user.max_buckets,
-            # subusers = str(user.subusers),
-            # suspended = user.suspended,
-            # swift_keys = str(user.swift_keys),
-            tenant = user.tenant,
-            user_id = user.user_id
-        )
-    except radosgw.exception.NoSuchUser:
+    except rgwadmin.exceptions.NoSuchUser as e:
         # it doesnt exist
         userout = None
+
+    else:
+        userout = {}
+        # get_user also returs parameters wich we can't change.
+        userout = dict(
+            user_id = user["user_id"],
+            tenant = user["tenant"],
+            display_name = user["display_name"],
+            email = user["email"],
+            # default_placement = user["default_placement"],
+            # generate_key = user["generate_key"],
+            # key_type = user["key_type"],
+            max_buckets = user["max_buckets"],
+            # placement_tags = user["placement_tags"],
+            suspended = user["suspended"],
+            # user_caps = user["user_caps"]
+        )
+
+        for key in userout:
+            if userout[key] == "" or userout[key] == "None":
+                userout[key] = None
+
+        if len(user["keys"]) > 0:
+            userout["access_key"] = user["keys"][0]["access_key"]
+            result["access_key"] = userout["access_key"]
+            userout["secret_key"] = user["keys"][0]["secret_key"]
+            result["secret_key"] = userout["secret_key"]
+
+        # diff all keys, not just predefined keys
+        # for key in user:
+        #     userout[key] = user[key]
+
     return userout
 
 
 def delete_user(rgw, uid, result):
     userout = None
     try:
-        userout = rgw.delete_user(uid=uid)
+        userout = rgw.remove_user(uid=uid)
 
-    except radosgw.exception.RadosGWAdminError as e:
-        result['error_messages'].append(e.get_code())
-        result['error_messages'].append(uid)
-    except radosgw.exception.NoSuchUser:
-        userout = None
+    except rgwadmin.exceptions.RGWAdminException as e:
+        result['msg']=str(e.code)
+        result['error_messages'].append(e.raw)
+
     return userout
 
 
-def create_user(rgw, uid, user, result):
-    userout = None
-    newuser_params = dict(
-        uid = uid,
-        display_name = user['display_name'],
-        email = user['email'],
-        # key_type = user.key_type, #  the key_type 's3' or 'swift'. Default: 's3'
-        # access_key = user.access_key,
-        # secret_key = user.secret_key,
-        # generate_key = user.generate_key, # True to auto generate a new key pair. Default: True
-        # user_caps = user.user_caps,
-        max_buckets = user['max_buckets']
-        # suspended = user.suspended
-    )
+def create_user(rgw, newuser_params, result):
+    newuser = None
 
     try:
         newuser = rgw.create_user(**newuser_params)
 
-        userout = dict(
-            keys = str(newuser.keys),
-            newuser_id = newuser.user_id
-        )
-    except radosgw.exception.RadosGWAdminError as e:
-        result['error_messages'].append(e.get_code())
+    except rgwadmin.exceptions.KeyExists as e:
+        result['msg']="Access_key not unique"
+        result['error_messages'].append("Access_key not unique")
+        result['error_messages'].append(e.code)
 
-    return userout
+    except rgwadmin.exceptions.RGWAdminException as e:
+        result['msg']=str(e.code)
+        result['error_messages'].append(e.code)
+
+    else:
+        result["access_key"] = newuser["keys"][0]["access_key"]
+        result["secret_key"] = newuser["keys"][0]["secret_key"]
+
+    return newuser
 
 
-def update_user(rgw, uid, user, result):
-    userout = None
+def remove_key(rgw, newuser_params, old_access_key, result):
+    newuser = None
+
     try:
-        newuser = rgw.update_user(
-                uid = uid,
-                display_name = user['display_name'],
-                # email = user['email'],
-                # key_type = user.key_type, #  the key_type 's3' or 'swift'. Default: 's3'
-                # access_key = user.access_key,
-                # secret_key = user.secret_key,
-                # generate_key = user.generate_key, # True to auto generate a new key pair. Default: True
-                # user_caps = user.user_caps,
-                # max_buckets = user['max_buckets']
-                # suspended = user.suspended
-            )
+        newuser = rgw.remove_key(access_key=old_access_key, uid=newuser_params["uid"])
 
-        userout = dict(
-            keys = str(newuser.keys),
-            newuser_id = newuser.user_id
-        )
-    except radosgw.exception.RadosGWAdminError as e:
-        result['error_messages'].append(str(e))
+    except rgwadmin.exceptions.RGWAdminException as e:
+        result['msg']=str(e.code)
+        result['error_messages'].append(e.code)
 
-    return userout
+    return newuser
+
+
+def update_user(rgw, newuser_params, result):
+    newuser = None
+
+    try:
+        newuser = rgw.modify_user(**newuser_params)
+
+    except rgwadmin.exceptions.KeyExists as e:
+        result['msg']="Access_key not unique"
+        result['error_messages'].append("Access_key not unique")
+        result['error_messages'].append(e.code)
+
+    except rgwadmin.exceptions.RGWAdminException as e:
+        result['msg']=str(e.code)
+        result['error_messages'].append(e.code)
+
+    else:
+        result["access_key"] = newuser["keys"][0]["access_key"]
+        result["secret_key"] = newuser["keys"][0]["secret_key"]
+
+    return newuser
+
+
+def get_user_params(params, add_user_id=False):
+    # Set UID to include tenant for some functions
+    if params['user_tenant'] is None:
+        uid = params['user_id']
+    else:
+        uid = f"{params['user_tenant']}${params['user_id']}"
+
+    newuser_params = dict(
+        uid = uid,
+        display_name = params["user_display_name"],
+        email = params["user_email"],
+        # keys = user_keys,
+        # default_placement = params["user_default_placement"],
+        max_buckets = params["user_max_buckets"],
+        # placement_tags = params["user_placement_tags"],
+        suspended = params["user_suspended"],
+        # user_caps = params["user_user_caps"]
+    )
+
+    if add_user_id:
+        newuser_params["user_id"] = params["user_id"]
+        newuser_params["tenant"] = params["user_tenant"]
+
+    if params["user_access_key"] is not None:
+        newuser_params["access_key"] = params["user_access_key"]
+        newuser_params["secret_key"] = params["user_secret_key"]
+
+    return newuser_params
 
 
 def main():
@@ -141,24 +193,20 @@ def main():
         host=dict(type='str', required=True),
         port=dict(type='str', default="8000"),
         is_secure=dict(type='bool', default=True),
+        verify_ssl=dict(type='bool', default=True),
         access_key=dict(type='str', no_log=True),
         secret_key=dict(type='str', no_log=True),
-        user=dict(
-            type='dict',
-            required=True,
-            options=dict(
-                # caps = dict(type='list', default=[]),
-                display_name=dict(type='str', default=""),
-                email=dict(type='str', default=""),
-                keys = dict(type='str', required=False),
-                max_buckets = dict(type='int', default="1000"),
-                # subusers = dict(type='list', default=[]),
-                # suspended = dict(type='int', default="0"),
-                # swift_keys = dict(type='str', default="[]"),
-                tenant = dict(type='str', default=None),
-                user_id=dict(type='str', required=True),
-            )
-        )
+        user_id=dict(type='str', required=True),
+        user_tenant = dict(type='str', default=None),
+        user_display_name=dict(type='str', default=None),
+        user_email=dict(type='str', default=None),
+        user_access_key=dict(type='str', required=False),
+        # user_default_placement=dict(type='str', default=None),
+        user_max_buckets = dict(type='int', default="1000"),
+        # user_placement_tags=dict(type='str', default=None),
+        user_secret_key=dict(type='str', required=False),
+        user_suspended = dict(type='int', default="0"),
+        # user_caps = dict(type='list', default=[]),
     )
 
     module = AnsibleModule(
@@ -166,7 +214,9 @@ def main():
         required_if=[],
         supports_check_mode=True,
         mutually_exclusive=[],
-        required_together=[],
+        required_together=[
+            ('user_access_key', 'user_secret_key')
+        ],
         required_one_of=[]
     )
 
@@ -178,46 +228,45 @@ def main():
     )
 
     # radosgw connection
-    rgw = radosgw.connection.RadosGWAdminConnection(
-            host=module.params.get('host'),
-            port=module.params.get('port'),
-            is_secure=module.params.get('is_secure'),
+    rgw = rgwadmin.RGWAdmin(
             access_key=module.params.get('access_key'),
             secret_key=module.params.get('secret_key'),
-            aws_signature='AWS4'
+            server=f"{module.params.get('host')}:{module.params.get('port')}",
+            secure=module.params.get('is_secure'),
+            verify=module.params.get('verify_ssl')
         )
 
     # test connection
     try:
         rgw.get_usage()
-    except radosgw.exception.RadosGWAdminError as e:
-        module.fail_json(msg=e.get_code(), **result)
-    except socket_error as e:
-        module.fail_json(msg=str(e), **result)
+    except rgwadmin.exceptions.ServerDown as e:
+        module.fail_json(msg="ServerDown")
+    except rgwadmin.exceptions.RGWAdminException as e:
+        module.fail_json(msg=str(e.code), error_messages=e.raw)
 
-    # Set UID to include tenant for some functions
-    if module.params['user']['tenant'] is None:
-        uid = module.params['user']['user_id']
-    else:
-        uid = f"{module.params['user']['tenant']}${module.params['user']['user_id']}"
+    # Create newuser_params
+    newuser_params = get_user_params(module.params)
+    newuser_params_user_id = get_user_params(module.params, add_user_id = True)
+    uid = newuser_params_user_id.pop("uid")
+    result["uid"] = uid
 
     # test if user exists
-    before_user = get_user(rgw, uid)
+    before_user = get_user(rgw, result["uid"], result)
 
-    # Ignore existing keys when not defined
-    if before_user is not None:
-        if module.params['user']['keys'] is None:
-            result['user_keys'] = before_user.pop("keys")
-            module.params['user'].pop("keys")
+    # Ignore existing keys when keys is None
+    if module.params['user_access_key'] is None:
+        if before_user is not None:
+            del before_user['access_key']
+            del before_user['secret_key']
 
     # Check if changes are needed
     if module.params['state'] == "present":
-        if before_user != module.params['user']:
+        if before_user != newuser_params_user_id:
             result['changed'] = True
             if module._diff:
                 result['diff'] = dict(
                     before=before_user,
-                    after=module.params['user']
+                    after=newuser_params_user_id
                 )
     if module.params['state'] == "absent":
         if before_user is not None:
@@ -229,17 +278,23 @@ def main():
                 )
 
 
+    # EXIT also in check mode
+    if len(result['error_messages']) > 0:
+        module.fail_json(msg=result['error_messages'])
+
     # exit when in check mode
     if module.check_mode:
         module.exit_json(**result)
 
     if result['changed']:
         if before_user is None and module.params['state'] == "present":
-            create_user(rgw, uid, module.params['user'], result)
+            create_user(rgw, newuser_params, result)
         elif before_user is not None and module.params['state'] == "absent":
             delete_user(rgw, uid, result)
-        elif before_user != module.params['user']:
-            update_user(rgw, uid, module.params['user'], result)
+        elif before_user != newuser_params_user_id:
+            if before_user["access_key"] != newuser_params_user_id["access_key"]:
+                remove_key(rgw, newuser_params, before_user["access_key"], result)
+            update_user(rgw, newuser_params, result)
 
     # EXIT
     if len(result['error_messages']) > 0:
