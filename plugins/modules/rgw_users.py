@@ -8,7 +8,6 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.common.dict_transformations \
     import recursive_diff, dict_merge
 from socket import error as socket_error
-# import boto # s3
 import rgwadmin
 import rgwadmin.exceptions
 
@@ -243,7 +242,7 @@ def main():
     uid = newuser_params_user_id.pop("uid")
     result["uid"] = uid
 
-    # test if user exists
+    # Test if user exists
     before_user = get_user(rgw, result["uid"], result)
 
     # Ignore existing keys when keys is None
@@ -270,7 +269,6 @@ def main():
                     after=None
                 )
 
-
     # EXIT on error in check mode
     if len(result['error_messages']) > 0:
         module.fail_json(msg=result['error_messages'])
@@ -294,7 +292,6 @@ def main():
         module.fail_json(msg=result['error_messages'])
     else:
         module.exit_json(**result)
-
 
 
 if __name__ == '__main__':
