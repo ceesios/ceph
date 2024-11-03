@@ -308,7 +308,7 @@ def main():
 
     newuser_params = get_user_params(module.params)
     newuser_params_user_id = get_user_params(module.params, add_user_id=True)
-    newuser_params_wo_caps = newuser_params_user_id.copy()
+    newuser_params_wo_caps = newuser_params_user_id
     newuser_params_wo_caps.pop("user_caps")
     uid = newuser_params_user_id.pop("uid")
     result["uid"] = uid
