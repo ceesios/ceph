@@ -20,8 +20,9 @@ options:
     state:
         description:
             - Whether the bucket or policy should be present or absent.
-        required: true
+        required: false
         choices: ['present', 'absent']
+        default: present
     bucket_name:
         description:
             - The name of the S3 bucket.

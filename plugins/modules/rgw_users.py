@@ -27,8 +27,9 @@ options:
     state:
         description:
             - Whether the user should be present or absent.
-        required: true
+        required: false
         choices: ['present', 'absent']
+        default: present
     host:
         description:
             - The endpoint host for the RGW service.
