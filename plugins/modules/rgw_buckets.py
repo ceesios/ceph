@@ -3,42 +3,29 @@ from botocore.exceptions import ClientError
 from ansible.module_utils.basic import AnsibleModule
 
 ANSIBLE_METADATA = {
-    'metadata_version': '0.1',
+    'metadata_version': '1.1',
     'status': ['preview'],
     'supported_by': 'community'
 }
 
-DOCUMENTATION = r'''
+DOCUMENTATION = '''
 ---
 module: rgw_buckets
-short_description: Manage S3 buckets and IAM policies using boto3
+short_description: Manage S3 buckets using boto3
 description:
-    - This module allows you to create and delete S3 buckets and IAM policies using boto3.
+    - This module allows you to create and delete S3 buckets using boto3.
 version_added: "2.9"
 author: "Cees Moerkerken (@ceesios)"
 options:
     state:
         description:
-            - Whether the bucket or policy should be present or absent.
-        required: false
+            - Whether the bucket should be present or absent.
+        required: true
         choices: ['present', 'absent']
-        default: present
     bucket_name:
         description:
             - The name of the S3 bucket.
-        required: false
-    policy_name:
-        description:
-            - The name of the IAM policy.
-        required: false
-    policy_document:
-        description:
-            - The JSON policy document.
-        required: false
-    policy_arn:
-        description:
-            - The ARN of the IAM policy to delete.
-        required: false
+        required: true
     access_key:
         description:
             - AWS access key.
@@ -49,11 +36,11 @@ options:
         required: true
     host:
         description:
-            - The endpoint host for the S3 or IAM service.
+            - The endpoint host for the S3 service.
         required: false
     port:
         description:
-            - The endpoint port for the S3 or IAM service.
+            - The endpoint port for the S3 service.
         required: false
     region:
         description:
@@ -73,7 +60,7 @@ options:
         default: true
 '''
 
-EXAMPLES = r'''
+EXAMPLES = '''
 # Create an S3 bucket
 - name: Create an S3 bucket
   rgw_buckets:
@@ -82,30 +69,6 @@ EXAMPLES = r'''
     access_key: "YOUR_ACCESS_KEY"
     secret_key: "YOUR_SECRET_KEY"
     host: "s3.your-endpoint.com"
-    port: 443
-    region: "us-west-1"
-    use_ssl: true
-    verify: true
-
-# Create an IAM policy
-- name: Create an IAM policy
-  rgw_buckets:
-    state: present
-    policy_name: my-test-policy
-    policy_document: >
-      {
-        "Version": "2012-10-17",
-        "Statement": [
-          {
-            "Effect": "Allow",
-            "Action": "s3:*",
-            "Resource": "arn:aws:s3:::my-test-bucket/*"
-          }
-        ]
-      }
-    access_key: "YOUR_ACCESS_KEY"
-    secret_key: "YOUR_SECRET_KEY"
-    host: "iam.your-endpoint.com"
     port: 443
     region: "us-west-1"
     use_ssl: true
@@ -123,22 +86,9 @@ EXAMPLES = r'''
     region: "us-west-1"
     use_ssl: true
     verify: true
-
-# Delete an IAM policy
-- name: Delete an IAM policy
-  rgw_buckets:
-    state: absent
-    policy_arn: arn:aws:iam::aws:policy/my-test-policy
-    access_key: "YOUR_ACCESS_KEY"
-    secret_key: "YOUR_SECRET_KEY"
-    host: "iam.your-endpoint.com"
-    port: 443
-    region: "us-west-1"
-    use_ssl: true
-    verify: true
 '''
 
-RETURN = r'''
+RETURN = '''
 bucket:
     description: Details about the bucket that was created or deleted.
     type: dict
@@ -146,22 +96,6 @@ bucket:
     sample: {
         "Name": "my-test-bucket",
         "CreationDate": "2021-01-01T00:00:00.000Z"
-    }
-policy:
-    description: Details about the policy that was created or deleted.
-    type: dict
-    returned: when state is present and policy_name is provided
-    sample: {
-        "PolicyName": "my-test-policy",
-        "PolicyId": "ABCDEFGHIJKLMN123456",
-        "Arn": "arn:aws:iam::123456789012:policy/my-test-policy",
-        "Path": "/",
-        "DefaultVersionId": "v1",
-        "AttachmentCount": 0,
-        "PermissionsBoundaryUsageCount": 0,
-        "IsAttachable": true,
-        "CreateDate": "2021-01-01T00:00:00.000Z",
-        "UpdateDate": "2021-01-01T00:00:00.000Z"
     }
 '''
 
@@ -179,30 +113,10 @@ def delete_bucket(s3_client, bucket_name, result):
     except ClientError as e:
         result['error_messages'].append(str(e))
 
-def create_policy(iam_client, policy_name, policy_document, result):
-    try:
-        iam_client.create_policy(
-            PolicyName=policy_name,
-            PolicyDocument=policy_document
-        )
-        result['changed'] = True
-    except ClientError as e:
-        result['error_messages'].append(str(e))
-
-def delete_policy(iam_client, policy_arn, result):
-    try:
-        iam_client.delete_policy(PolicyArn=policy_arn)
-        result['changed'] = True
-    except ClientError as e:
-        result['error_messages'].append(str(e))
-
 def main():
-    module_args = dict(
+    argument_spec = dict(
         state=dict(type='str', required=True, choices=['present', 'absent']),
-        bucket_name=dict(type='str', required=False),
-        policy_name=dict(type='str', required=False),
-        policy_document=dict(type='str', required=False),
-        policy_arn=dict(type='str', required=False),
+        bucket_name=dict(type='str', required=True),
         access_key=dict(type='str', required=True, no_log=True),
         secret_key=dict(type='str', required=True, no_log=True),
         host=dict(type='str', required=False),
@@ -218,7 +132,7 @@ def main():
     )
 
     module = AnsibleModule(
-        argument_spec=module_args,
+        argument_spec=argument_spec,
         supports_check_mode=True,
         required_together=[['host', 'port']]
     )
@@ -238,24 +152,20 @@ def main():
         verify=module.params['verify']
     )
 
-    iam_client = boto3.client(
-        'iam',
-        aws_access_key_id=module.params['access_key'],
-        aws_secret_access_key=module.params['secret_key'],
-        endpoint_url=endpoint_url,
-        region_name=module.params['region'],
-        use_ssl=module.params['use_ssl'],
-        verify=module.params['verify']
-    )
-
     if module.params['state'] == 'present':
-        if module.params['bucket_name']:
+            create_bucket(s3_client, module.params['bucket_name'], result)
             create_bucket(s3_client, module.params['bucket_name'], result)
         if module.params['policy_name'] and module.params['policy_document']:
             create_policy(iam_client, module.params['policy_name'], module.params['policy_document'], result)
+        create_bucket(s3_client, module.params['bucket_name'], result)
+        if module.params['policy_name'] and module.params['policy_document']:
+            create_policy(iam_client, module.params['policy_name'], module.params['policy_document'], result)
     elif module.params['state'] == 'absent':
-        if module.params['bucket_name']:
             delete_bucket(s3_client, module.params['bucket_name'], result)
+            delete_bucket(s3_client, module.params['bucket_name'], result)
+        if module.params['policy_arn']:
+            delete_policy(iam_client, module.params['policy_arn'], result)
+        delete_bucket(s3_client, module.params['bucket_name'], result)
         if module.params['policy_arn']:
             delete_policy(iam_client, module.params['policy_arn'], result)
 
