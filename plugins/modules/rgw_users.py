@@ -260,24 +260,24 @@ def get_user_params(params, add_user_id=False):
 
 
 def main():
-    argument_spec = {
-        "state": dict(type='str', default="present", choices=['present', 'absent']),
-        "host": dict(type='str', required=True),
-        "port": dict(type='str', default="8000"),
-        "is_secure": dict(type='bool', default=True),
-        "verify_ssl": dict(type='bool', default=True),
-        "access_key": dict(type='str', required=True, no_log=True),
-        "secret_key": dict(type='str', required=True, no_log=True),
-        "user_id": dict(type='str', required=True),
-        "user_tenant": dict(type='str', default=None),
-        "user_display_name": dict(type='str', default=None),
-        "user_email": dict(type='str', default=None),
-        "user_access_key": dict(type='str', required=False),
-        "user_secret_key": dict(type='str', required=False),
-        "user_max_buckets": dict(type='int', default=1000),
-        "user_suspended": dict(type='int', default=0),
-        "admin_caps": dict(type='str', default=None)
-    }
+    argument_spec = dict(
+        state=dict(type='str', default="present", choices=['present', 'absent']),
+        host=dict(type='str', required=True),
+        port=dict(type='str', default="8000"),
+        is_secure=dict(type='bool', default=True),
+        verify_ssl=dict(type='bool', default=True),
+        access_key=dict(type='str', required=True, no_log=True),
+        secret_key=dict(type='str', required=True, no_log=True),
+        user_id=dict(type='str', required=True),
+        user_tenant=dict(type='str', default=None),
+        user_display_name=dict(type='str', default=None),
+        user_email=dict(type='str', default=None),
+        user_access_key=dict(type='str', required=False),
+        user_secret_key=dict(type='str', required=False),
+        user_max_buckets=dict(type='int', default=1000),
+        user_suspended=dict(type='int', default=0),
+        admin_caps=dict(type='str', default=None)
+    )
 
     module = AnsibleModule(
         argument_spec=argument_spec,
